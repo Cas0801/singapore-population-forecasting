@@ -1,32 +1,76 @@
 # Singapore Population Forecasting & Scenario Analysis
 
-An end-to-end, reproducible forecasting project that estimates Singapore's population and communicates uncertainty for planning decisions. It extends a basic linear-regression course assignment into a portfolio project with time-aware validation, model benchmarking, prediction intervals, and an interactive dashboard.
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://singapore-population-forecasting-cas0801.streamlit.app/)
+[![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Tests](https://img.shields.io/badge/tests-3_passing-2ea44f)](#reproduce-the-project)
+[![Data](https://img.shields.io/badge/data-SingStat_official-0B7285)](data/SOURCES.md)
 
-**[Open the live Streamlit dashboard](https://singapore-population-forecasting-cas0801.streamlit.app/)**
+An end-to-end forecasting system built from **76 years of official Singapore population data**. It benchmarks five statistical and machine-learning models with leakage-safe temporal validation, produces 2026-2035 forecasts with uncertainty bands, and exposes the results through an interactive dashboard.
 
-## What this project demonstrates
+**[Launch the live dashboard](https://singapore-population-forecasting-cas0801.streamlit.app/)** · **[Read the full project report](PROJECT_REPORT.md)** · **[Review the data provenance](data/SOURCES.md)**
 
-- Data engineering: ingestion, schema checks, and reproducible processing
-- Data science: naive-drift, linear, polynomial-ridge, random-forest, and SARIMAX benchmarks
-- Evaluation: expanding-window backtesting instead of random train/test splitting
-- Decision support: 10-year forecasts, prediction intervals, and low/base/high migration scenarios
-- Product delivery: an interactive Streamlit dashboard and documented CLI workflow
+## At a glance
 
-## Data
+| Data | Validation | Best backtest model | Backtest RMSE | 2035 forecast |
+| --- | --- | --- | ---: | ---: |
+| SingStat, 1950-2025 | 20 rolling-origin folds | SARIMAX | 80,974 people | 7.29M |
 
-`data/raw/singapore_total_population.csv` is the included, source-traceable primary series. Regenerate it with `python -m src.download_singstat`. The required schema is:
+### Why this project matters
 
-```csv
-year,population
-1950,1022200
-...
+A simple random split is misleading for forecasting because it can train on the future and test on the past. This project simulates real deployment: every prediction uses only information available before its target year. It also keeps 2022-2025 untouched as a final stress test.
+
+The most important finding is not a headline forecast. SARIMAX wins the 2002-2021 rolling backtest, but performs poorly through the post-COVID rebound. That reversal demonstrates why forecast horizon, structural breaks, and model monitoring matter.
+
+## System workflow
+
+```mermaid
+flowchart LR
+    A["SingStat API<br/>1950-2025"] --> B["Schema and quality checks"]
+    B --> C["Expanding-window backtest<br/>20 one-year forecasts"]
+    C --> D["Five-model benchmark"]
+    D --> E["Untouched 2022-2025<br/>stress test"]
+    D --> F["2026-2035 forecast<br/>and uncertainty bands"]
+    E --> G["Streamlit dashboard"]
+    F --> G
 ```
 
-Use official SingStat annual total-population data as the primary source. Keep a source URL, extraction date, and definition of `population` in `data/SOURCES.md`.
+## Models and results
 
-## Quick start
+The benchmark includes naive drift, linear regression, polynomial ridge, random forest, and SARIMAX.
+
+| Model | Backtest RMSE (2002-2021) | Final holdout RMSE (2022-2025) |
+| --- | ---: | ---: |
+| **SARIMAX** | **80,974** | 1,025,400 |
+| Naive drift | 97,438 | 336,534 |
+| Random forest | 248,936 | 376,237 |
+| Polynomial ridge | 360,299 | **93,558** |
+| Linear regression | 453,240 | 264,471 |
+
+SARIMAX improves rolling RMSE by **16.9%** over naive drift. However, its weak final holdout shows that a model optimized for repeated one-year forecasts can fail across a multi-year structural shock. Polynomial ridge's holdout win is reported, but it is not selected after viewing the final test period because that would introduce selection bias.
+
+The selected SARIMAX model estimates **6.67 million people in 2030** and **7.29 million in 2035**. The approximate 2035 sensitivity interval is **6.78-7.79 million**. These are model-based planning scenarios—not official demographic projections.
+
+## Evaluation design
+
+```text
+Train through 2001 → predict 2002
+Train through 2002 → predict 2003
+...
+Train through 2020 → predict 2021
+Select model using these 20 folds
+Evaluate once on untouched 2022-2025 holdout
+Refit on all data → forecast 2026-2035
+```
+
+RMSE is the primary selection metric, with MAE and MAPE reported for interpretability. Full fold-level predictions are available in [`reports/backtest_predictions.csv`](reports/backtest_predictions.csv).
+
+## Data and reproducibility
+
+The primary target is SingStat's `Total Population` series (`M810001`), which includes residents and non-residents. The source contains definition changes around 1990 and 2003; these are documented rather than silently ignored. See [`data/SOURCES.md`](data/SOURCES.md) for provenance and limitations.
 
 ```bash
+git clone https://github.com/Cas0801/singapore-population-forecasting.git
+cd singapore-population-forecasting
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -34,34 +78,47 @@ python -m src.train --input data/raw/singapore_total_population.csv
 streamlit run app.py
 ```
 
-The training command writes `reports/model_metrics.csv`, `reports/backtest_predictions.csv`, and `reports/forecast.csv`; the dashboard renders the interactive Plotly chart.
+Regenerate the official dataset with:
 
-## Evaluation design
+```bash
+python -m src.download_singstat
+```
 
-Models use only past observations to forecast future years. Model selection uses 20 expanding-window one-step forecasts over 2002-2021. The most recent four years (2022-2025) remain untouched until the final stress test. This separation prevents choosing a model after looking at the final evaluation period.
+Run the validation suite:
 
-## Current results
+```bash
+pytest -q
+```
 
-| Model | Backtest RMSE (2002-2021) | Holdout RMSE (2022-2025) |
-| --- | ---: | ---: |
-| SARIMAX | 80,974 | 1,025,400 |
-| Naive drift | 97,438 | 336,534 |
-| Random forest | 248,936 | 376,237 |
-| Polynomial ridge | 360,299 | 93,558 |
-| Linear regression | 453,240 | 264,471 |
+## Repository structure
 
-SARIMAX wins the pre-registered backtest and is therefore used for the published 2026-2035 forecast. Its weak final holdout is an important finding rather than something to hide: a model that performs well on repeated one-year forecasts can fail on a multi-year period containing a structural shock and rebound. The 2035 base estimate is **7.29 million**, with an approximate interval of **6.78-7.79 million**. These intervals are empirical sensitivity bands based on backtest error, not formal demographic confidence intervals.
+```text
+├── app.py                    # Interactive Streamlit product
+├── src/
+│   ├── data.py               # Schema and quality validation
+│   ├── download_singstat.py  # Reproducible official-data ingestion
+│   ├── models.py             # Forecasting models and baselines
+│   └── train.py              # Backtesting, selection, and forecasting
+├── data/                     # Source-traceable input and documentation
+├── reports/                  # Metrics, fold predictions, and forecast output
+├── tests/                    # Automated data/model checks
+└── PROJECT_REPORT.md         # Findings, limitations, and next iteration
+```
 
-## Portfolio narrative
+## Technology
 
-Avoid presenting a long-horizon forecast as a certainty. The dashboard should state that demographic forecasts depend on policy, migration, fertility, and shocks. Use scenario analysis to make assumptions explicit.
+Python · pandas · NumPy · scikit-learn · statsmodels · Plotly · Streamlit · pytest
 
-## Suggested resume bullet
+## Limitations and next steps
 
-> Built a reproducible Singapore population-forecasting pipeline from 76 years of official SingStat data; benchmarked five regression and time-series approaches across 20 rolling-origin folds and delivered 10-year scenario forecasts in an interactive Streamlit dashboard.
+- Only 76 annual observations are available; deep learning would be poorly justified.
+- Total population is strongly affected by migration policy and non-resident flows.
+- The current selection objective is one-year accuracy, while the published horizon is ten years.
+- Prediction bands are empirical sensitivity bands, not calibrated official confidence intervals.
+- A future version should evaluate direct 1-, 3-, 5-, and 10-year horizons and add births, deaths, and migration assumptions.
 
-Alternative results-focused bullet:
+## Resume-ready summary
 
-> Evaluated five forecasting approaches with leakage-safe temporal validation; achieved an 80,974-person rolling RMSE with SARIMAX, diagnosed post-COVID holdout degradation, and communicated model risk through scenario and uncertainty bands.
+> Built a reproducible Singapore population-forecasting pipeline from 76 years of official SingStat data; benchmarked five regression and time-series approaches across 20 rolling-origin folds, improving RMSE by 16.9% over a naive baseline, and delivered 10-year scenario forecasts through a deployed Streamlit dashboard.
 
-Do not claim that SARIMAX improved final-holdout accuracy: the results do not support that statement.
+The post-COVID holdout degradation is deliberately reported. It is evidence of model-risk analysis, not a result to hide.
