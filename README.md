@@ -2,6 +2,8 @@
 
 An end-to-end, reproducible forecasting project that estimates Singapore's population and communicates uncertainty for planning decisions. It extends a basic linear-regression course assignment into a portfolio project with time-aware validation, model benchmarking, prediction intervals, and an interactive dashboard.
 
+**[Open the live Streamlit dashboard](https://singapore-population-forecasting-cas0801.streamlit.app/)**
+
 ## What this project demonstrates
 
 - Data engineering: ingestion, schema checks, and reproducible processing
